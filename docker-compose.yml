@@ -28,6 +28,9 @@ services:
       DATABASE_URL: mysql://instagram:instagram@db:3306/instagram_downloader
       DOWNLOAD_CONCURRENCY: 2
       DOWNLOAD_TIMEOUT_MS: 180000
+      INSTAGRAM_PROVIDER: ${INSTAGRAM_PROVIDER:-auto}
+      APIFY_TOKEN: ${APIFY_TOKEN:-}
+      APIFY_INSTAGRAM_ACTOR: ${APIFY_INSTAGRAM_ACTOR:-apify~instagram-api-scraper}
     ports:
       - "3000:3000"
     volumes:

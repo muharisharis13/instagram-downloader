@@ -643,7 +643,7 @@ const faqs = [
   {
     id: 'private-post',
     question: 'Bisakah postingan privat diunduh?',
-    answer: 'Tidak secara bawaan. Server hanya mengambil konten yang bisa diakses publik atau lewat cookies Instagram yang Anda kelola sendiri.',
+    answer: 'Mode tanpa cookies hanya mengambil konten publik. Postingan privat tidak didukung.',
   },
   {
     id: 'missing-media',
@@ -653,7 +653,7 @@ const faqs = [
   {
     id: 'rate-limit',
     question: 'Mengapa Instagram membatasi permintaan?',
-    answer: 'Terlalu banyak unduhan dalam waktu singkat dapat dibatasi. Tunggu beberapa menit lalu ulangi item gagal.',
+    answer: 'Akses langsung dari IP server dapat dibatasi. Operator dapat memakai provider unduhan untuk konten publik tanpa sesi Instagram.',
   },
 ];
 

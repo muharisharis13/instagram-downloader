@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGalleryDlArgs, friendlyDownloadError } from '../server/downloader.js';
+import {
+  buildGalleryDlArgs,
+  extractApifyMedia,
+  friendlyDownloadError,
+  resolveInstagramProvider,
+} from '../server/downloader.js';
 
 test('mode anonim memakai GraphQL dan tidak mengulang HTTP 429', () => {
   const args = buildGalleryDlArgs({
@@ -43,4 +48,28 @@ test('HTTP 429 tetap dikenali saat URL error menuju halaman login', () => {
     code: 'RATE_LIMITED',
     message: 'Instagram membatasi IP server. Tunggu pembatasan reda atau gunakan sesi Instagram yang valid.',
   });
+});
+
+test('mode auto memakai Apify saat token tersedia tanpa cookies Instagram', () => {
+  assert.equal(resolveInstagramProvider({ provider: 'auto', apifyToken: 'token' }), 'apify');
+  assert.equal(resolveInstagramProvider({ provider: 'auto', apifyToken: '' }), 'gallery-dl');
+});
+
+test('hasil Apify mengambil foto dan video carousel tanpa thumbnail video', () => {
+  const media = extractApifyMedia([
+    {
+      childPosts: [
+        { displayUrl: 'https://scontent.cdninstagram.com/photo.jpg' },
+        {
+          displayUrl: 'https://scontent.cdninstagram.com/video-cover.jpg',
+          videoUrl: 'https://scontent.cdninstagram.com/video.mp4',
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(media, [
+    { url: 'https://scontent.cdninstagram.com/photo.jpg', mediaType: 'photo' },
+    { url: 'https://scontent.cdninstagram.com/video.mp4', mediaType: 'video' },
+  ]);
 });

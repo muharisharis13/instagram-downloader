@@ -23,7 +23,7 @@ Buka `http://localhost:3000`. Ubah seluruh sandi contoh di `docker-compose.yml` 
 
 ## Pengembangan lokal
 
-Prasyarat: Node.js 22+, MySQL 8.4+, `gallery-dl`, `yt-dlp`, `ffmpeg`, dan `zip`.
+Prasyarat: Node.js 22+, MySQL 8.4+, dan `zip`. Mode lokal `gallery-dl` juga memerlukan `gallery-dl`, `yt-dlp`, dan `ffmpeg`.
 
 ```bash
 cp .env.example .env
@@ -38,6 +38,19 @@ npm run dev:web
 ```
 
 Frontend tersedia di `http://localhost:5173`; Vite meneruskan `/api` ke port 3000.
+
+## Provider tanpa cookies Instagram
+
+Mode Apify mengambil postingan publik melalui infrastruktur provider, sehingga server tidak memerlukan sesi atau file cookies Instagram:
+
+```env
+INSTAGRAM_PROVIDER=apify
+APIFY_TOKEN=isi_token_apify
+APIFY_INSTAGRAM_ACTOR=apify~instagram-api-scraper
+DOWNLOAD_CONCURRENCY=1
+```
+
+Simpan token hanya di `.env` server. Akun, kuota, dan biaya provider tetap berlaku. Mode `auto` memilih Apify saat `APIFY_TOKEN` tersedia dan memakai `gallery-dl` bila token tidak tersedia. Nilai eksplisit `INSTAGRAM_PROVIDER` selalu menang.
 
 ## Validasi
 
@@ -62,9 +75,9 @@ npm run build
 
 ## Catatan operasi
 
-- Unduhan memakai `gallery-dl`; `yt-dlp` dan `ffmpeg` tersedia sebagai pendukung video dalam image Docker.
+- Mode `auto` memakai Apify jika `APIFY_TOKEN` tersedia; selain itu memakai `gallery-dl`. `yt-dlp` dan `ffmpeg` tersedia sebagai pendukung video dalam image Docker.
 - Set `DOWNLOAD_DEBUG=1` sementara untuk mencatat keluaran `gallery-dl` yang sudah disamarkan; kembalikan ke `0` setelah diagnosis.
-- Konten privat atau yang membutuhkan login memerlukan file cookies milik operator. Jangan meminta atau menyimpan sandi Instagram pengguna.
+- Mode Apify hanya untuk konten publik. Mode `gallery-dl` dapat memakai cookies operator untuk konten yang membutuhkan sesi. Jangan meminta atau menyimpan sandi Instagram pengguna.
 - Antrean berada dalam proses Node. Job `running` dikembalikan ke antrean setelah restart. Untuk lebih dari satu instance aplikasi, ganti antrean ini dengan Redis/BullMQ.
 - Bersihkan `storage/` memakai kebijakan retensi VPS. File tidak dihapus otomatis agar unduh ulang tetap bekerja.
 - Gunakan hanya untuk konten milik sendiri atau konten yang Anda berhak simpan, sesuai hukum dan ketentuan layanan yang berlaku.
