@@ -92,17 +92,28 @@ function matchesSelection(mediaType, contentType) {
   return contentType === 'both' || mediaType === contentType;
 }
 
+export function buildGalleryDlArgs({ jobDirectory, sourceUrl, cookiesFile, debug = false }) {
+  const args = [];
+  if (debug) args.push('--verbose');
+  args.push('--destination', jobDirectory, '--option', 'extractor.instagram.retries=0');
+  if (cookiesFile) args.push('--cookies', cookiesFile);
+  else args.push('--option', 'extractor.instagram.api=graphql');
+  args.push(sourceUrl);
+  return args;
+}
+
 export async function downloadInstagram({ id, sourceUrl, shortcode, contentType, onProgress }) {
   const jobDirectory = path.join(downloadRoot, id);
   await fs.rm(jobDirectory, { recursive: true, force: true });
   await fs.mkdir(jobDirectory, { recursive: true });
 
   const binary = process.env.GALLERY_DL_BIN || 'gallery-dl';
-  const args = [];
-  if (downloadDebug) args.push('--verbose');
-  args.push('--destination', jobDirectory);
-  if (process.env.INSTAGRAM_COOKIES_FILE) args.push('--cookies', process.env.INSTAGRAM_COOKIES_FILE);
-  args.push(sourceUrl);
+  const args = buildGalleryDlArgs({
+    jobDirectory,
+    sourceUrl,
+    cookiesFile: process.env.INSTAGRAM_COOKIES_FILE,
+    debug: downloadDebug,
+  });
 
   let observedLines = 0;
   onProgress(10);
@@ -165,14 +176,14 @@ export function friendlyDownloadError(error) {
   if (error?.code === 'DOWNLOAD_TIMEOUT') return { code: error.code, message: 'Instagram terlalu lama merespons. Coba ulangi.' };
   if (error?.code === 'DOWNLOADER_MISSING') return { code: error.code, message: error.message };
   if (error?.code === 'NO_MATCHING_MEDIA') return { code: error.code, message: error.message };
+  if (lower.includes('rate') || lower.includes('429') || lower.includes('too many')) {
+    return { code: 'RATE_LIMITED', message: 'Instagram membatasi IP server. Tunggu pembatasan reda atau gunakan sesi Instagram yang valid.' };
+  }
   if (lower.includes('private') || lower.includes('login required') || lower.includes('cookies')) {
     return { code: 'PRIVATE_OR_LOGIN_REQUIRED', message: 'Postingan privat atau membutuhkan sesi Instagram.' };
   }
   if (lower.includes('not found') || lower.includes('404') || lower.includes('does not exist')) {
     return { code: 'POST_NOT_FOUND', message: 'Postingan tidak ditemukan atau sudah dihapus.' };
-  }
-  if (lower.includes('rate') || lower.includes('429') || lower.includes('too many')) {
-    return { code: 'RATE_LIMITED', message: 'Instagram membatasi permintaan. Tunggu sebentar lalu ulangi.' };
   }
   return { code: error?.code || 'DOWNLOAD_FAILED', message: 'Media gagal diambil. Periksa link lalu coba lagi.' };
 }
