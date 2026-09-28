@@ -17,6 +17,23 @@ const statusLabels = {
   partial: 'Selesai sebagian',
 };
 
+const navigationItems = [
+  { view: 'download', label: 'Unduh', icon: 'download' },
+  { view: 'history', label: 'Riwayat', icon: 'history' },
+  { view: 'settings', label: 'Bantuan', icon: 'help' },
+];
+
+function AppIcon({ name }) {
+  const paths = {
+    download: <><path d="M12 3v11" /><path d="m8 10 4 4 4-4" /><path d="M5 18v2h14v-2" /></>,
+    history: <><path d="M4 5v4h4" /><path d="M5.2 8A8 8 0 1 1 4 13" /><path d="M12 7v5l3 2" /></>,
+    help: <><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.3 2.3 0 1 1 3.7 1.8c-.9.7-1.5 1.1-1.5 2.2" /><path d="M12 17h.01" /></>,
+    account: <><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>,
+    close: <><path d="m7 7 10 10" /><path d="M17 7 7 17" /></>,
+  };
+  return <svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
@@ -48,6 +65,47 @@ function shortUrl(url) {
   return String(url).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 }
 
+function normalizeInstagramLink(rawValue) {
+  const raw = String(rawValue ?? '').trim().replace(/^[\[({<'"]+|[\])}>'".,;!?]+$/g, '');
+  if (!raw) return { valid: false, input: rawValue, reason: 'Link kosong.' };
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    return { valid: false, input: rawValue, reason: 'Format link tidak dikenali.' };
+  }
+  const host = parsedUrl.hostname.toLowerCase();
+  const segments = parsedUrl.pathname.split('/').filter(Boolean);
+  if (!['instagram.com', 'www.instagram.com', 'm.instagram.com'].includes(host) || !['p', 'reel', 'tv'].includes(segments[0]) || !segments[1]) {
+    return { valid: false, input: rawValue, reason: 'Gunakan link postingan, Reel, atau video Instagram publik.' };
+  }
+  const shortcode = segments[1].replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  if (!shortcode) return { valid: false, input: rawValue, reason: 'Kode postingan tidak valid.' };
+  return {
+    valid: true,
+    input: rawValue,
+    shortcode,
+    kind: segments[0],
+    url: `https://www.instagram.com/${segments[0]}/${shortcode}/`,
+  };
+}
+
+function parseInstagramLinks(input) {
+  const tokens = String(input ?? '').split(/[\s,]+/).map((token) => token.trim()).filter(Boolean);
+  const seen = new Set();
+  const valid = [];
+  const invalid = [];
+  for (const token of tokens) {
+    const item = normalizeInstagramLink(token);
+    if (!item.valid) invalid.push(item);
+    else if (!seen.has(item.url)) {
+      seen.add(item.url);
+      valid.push(item);
+    }
+  }
+  return { valid, invalid, count: valid.length };
+}
+
 function Toast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return undefined;
@@ -56,9 +114,9 @@ function Toast({ toast, onClose }) {
   }, [toast, onClose]);
   if (!toast) return null;
   return (
-    <div className={`toast toast-${toast.type || 'success'}`} role="status">
+    <div className={`toast toast-${toast.type || 'success'}`} role={toast.type === 'error' ? 'alert' : 'status'} aria-live={toast.type === 'error' ? 'assertive' : 'polite'}>
       <span>{toast.message}</span>
-      <button type="button" onClick={onClose} aria-label="Tutup pemberitahuan">×</button>
+      <button type="button" onClick={onClose} aria-label="Tutup pemberitahuan"><AppIcon name="close" /></button>
     </div>
   );
 }
@@ -92,9 +150,9 @@ function LinkList({ parsed, selected, setSelected }) {
   const validUrls = parsed.valid.map((item) => item.url);
   const allSelected = validUrls.length > 0 && validUrls.every((url) => selected.includes(url));
   const toggleAll = () => setSelected(allSelected ? [] : validUrls);
-  const toggle = (url) => {
-    setSelected(selected.includes(url) ? selected.filter((item) => item !== url) : [...selected, url]);
-  };
+  const toggle = (url) => setSelected((current) => (
+    current.includes(url) ? current.filter((item) => item !== url) : [...current, url]
+  ));
 
   if (!parsed.valid.length && !parsed.invalid.length) return null;
   return (
@@ -104,16 +162,19 @@ function LinkList({ parsed, selected, setSelected }) {
           <p className="eyebrow">Link terdeteksi</p>
           <h3>{parsed.valid.length} siap diproses</h3>
         </div>
-        {parsed.valid.length > 0 && (
-          <button type="button" className="button button-quiet" onClick={toggleAll}>
-            {allSelected ? 'Hapus semua pilihan' : 'Pilih semua'}
-          </button>
-        )}
+        <div className="selection-actions">
+          {parsed.valid.length > 0 && <span className="selection-count">{selected.length}/{parsed.valid.length} dipilih</span>}
+          {parsed.valid.length > 0 && (
+            <button type="button" className="button button-quiet" onClick={toggleAll}>
+              {allSelected ? 'Kosongkan' : 'Pilih semua'}
+            </button>
+          )}
+        </div>
       </div>
       <div className="link-list">
         {parsed.valid.map((item) => (
           <label className="link-row" key={item.url}>
-            <input type="checkbox" checked={selected.includes(item.url)} onChange={() => toggle(item.url)} />
+            <input type="checkbox" checked={selected.includes(item.url)} onChange={() => toggle(item.url)} aria-label={`Pilih ${item.url}`} />
             <span className="link-icon valid" aria-hidden="true">✓</span>
             <span>
               <strong>{item.kind === 'reel' ? 'Reel' : 'Postingan'} {item.shortcode}</strong>
@@ -149,7 +210,7 @@ function JobStatus({ job }) {
         </div>
         <span className={`status-pill status-${job.status}`}>{statusLabels[job.status] || job.status}</span>
       </div>
-      <div className="progress-track" aria-label={`Progres ${job.progress}%`}>
+      <div className="progress-track" role="progressbar" aria-label={`Progres ${job.shortcode}`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={job.progress}>
         <span style={{ width: `${job.progress}%` }} />
       </div>
       <div className="job-meta">
@@ -194,17 +255,40 @@ function ResultGallery({ results, onPreview }) {
 }
 
 function PreviewModal({ result, onClose }) {
+  const dialogRef = useRef(null);
+  const closeRef = useRef(null);
   useEffect(() => {
     if (!result) return undefined;
-    const onKey = (event) => event.key === 'Escape' && onClose();
+    const previousFocus = document.activeElement;
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Tab') return;
+      const focusable = [...dialogRef.current.querySelectorAll('button, a[href], video[controls]')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.body.classList.add('modal-open');
+    closeRef.current?.focus();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      window.removeEventListener('keydown', onKey);
+      previousFocus?.focus?.();
+    };
   }, [result, onClose]);
   if (!result) return null;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="preview-modal" role="dialog" aria-modal="true" aria-label="Pratinjau hasil" onMouseDown={(event) => event.stopPropagation()}>
-        <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup pratinjau">×</button>
+      <section ref={dialogRef} className="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title" onMouseDown={(event) => event.stopPropagation()}>
+        <button ref={closeRef} type="button" className="modal-close" onClick={onClose} aria-label="Tutup pratinjau"><AppIcon name="close" /></button>
         <div className="preview-media">
           {result.mediaType === 'photo' ? (
             <img src={result.fileUrl} alt={result.fileName} />
@@ -215,7 +299,7 @@ function PreviewModal({ result, onClose }) {
         <div className="preview-details">
           <div>
             <p className="eyebrow">{result.mediaType === 'photo' ? 'Foto' : 'Video'} · kualitas asli</p>
-            <h3>{result.fileName}</h3>
+            <h3 id="preview-title">{result.fileName}</h3>
           </div>
           <a className="button button-secondary" href={result.fileUrl} download={result.fileName}>Simpan file</a>
         </div>
@@ -225,11 +309,13 @@ function PreviewModal({ result, onClose }) {
 }
 
 function DownloadPage({ preferences, activeBatchId, onBatchChange, notify, onOpenHistory }) {
+  const inputRef = useRef(null);
   const [input, setInput] = useState('');
   const [parsed, setParsed] = useState({ valid: [], invalid: [], count: 0 });
   const [selected, setSelected] = useState([]);
   const [contentType, setContentType] = useState(preferences.defaultContentType || 'both');
   const [validating, setValidating] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
   const [starting, setStarting] = useState(false);
   const [batch, setBatch] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -239,12 +325,9 @@ function DownloadPage({ preferences, activeBatchId, onBatchChange, notify, onOpe
   useEffect(() => setContentType(preferences.defaultContentType || 'both'), [preferences.defaultContentType]);
 
   useEffect(() => {
-    if (!input.trim()) {
-      setParsed({ valid: [], invalid: [], count: 0 });
-      setSelected([]);
-      return undefined;
-    }
+    if (!input.trim()) return undefined;
     const controller = new AbortController();
+    let alive = true;
     const timer = setTimeout(async () => {
       setValidating(true);
       try {
@@ -253,19 +336,23 @@ function DownloadPage({ preferences, activeBatchId, onBatchChange, notify, onOpe
           body: JSON.stringify({ text: input }),
           signal: controller.signal,
         });
+        if (!alive) return;
         setParsed(result);
-        setSelected(result.valid.map((item) => item.url));
+        const available = new Set(result.valid.map((item) => item.url));
+        setSelected((current) => current.filter((url) => available.has(url)));
+        setValidationMessage('');
       } catch (error) {
-        if (error.name !== 'AbortError') notify(error.message, 'error');
+        if (alive && error.name !== 'AbortError') setValidationMessage('Validasi server belum tersedia. Link tetap diperiksa saat proses dimulai.');
       } finally {
-        setValidating(false);
+        if (alive) setValidating(false);
       }
     }, 320);
     return () => {
+      alive = false;
       clearTimeout(timer);
       controller.abort();
     };
-  }, [input, notify]);
+  }, [input]);
 
   useEffect(() => {
     if (!activeBatchId) return undefined;
@@ -293,9 +380,25 @@ function DownloadPage({ preferences, activeBatchId, onBatchChange, notify, onOpe
   }, [activeBatchId, notify]);
 
   const results = useMemo(() => batch?.jobs.flatMap((job) => job.results) || [], [batch]);
+  const tooManyLinks = parsed.valid.length > 25;
 
-  const startDownload = async () => {
+  const updateInput = (value) => {
+    const next = parseInstagramLinks(value);
+    setInput(value);
+    setParsed(next);
+    setSelected(next.valid.map((item) => item.url));
+    setValidationMessage('');
+  };
+
+  const clearInput = () => {
+    updateInput('');
+    inputRef.current?.focus();
+  };
+
+  const startDownload = async (event) => {
+    event?.preventDefault();
     if (!selected.length) return notify('Pilih minimal satu link valid.', 'error');
+    if (tooManyLinks) return notify('Maksimal 25 link dalam satu proses.', 'error');
     setStarting(true);
     try {
       if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission();
@@ -360,29 +463,45 @@ function DownloadPage({ preferences, activeBatchId, onBatchChange, notify, onOpe
             <span>Kualitas asli</span><span>Progres realtime</span><span>Arsip ZIP rapi</span>
           </div>
         </div>
-        <div className="download-card">
+        <form className="download-card" onSubmit={startDownload} aria-busy={starting || validating}>
           <label htmlFor="links-input" className="input-label">Tempel link Instagram</label>
           <div className={`textarea-wrap ${validating ? 'is-loading' : ''}`}>
             <textarea
+              ref={inputRef}
               id="links-input"
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={(event) => updateInput(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void startDownload(event);
+              }}
               placeholder={'https://www.instagram.com/p/...\nhttps://www.instagram.com/reel/...'}
               rows="7"
+              aria-describedby="links-help links-status"
             />
-            <span className="textarea-hint">Pisahkan link dengan baris baru, spasi, atau koma.</span>
           </div>
+          <div className="composer-meta" id="links-help">
+            <span>Pisahkan dengan baris baru, spasi, atau koma.</span>
+            {input && <button type="button" className="inline-action" onClick={clearInput}>Hapus semua</button>}
+          </div>
+          <div className="detection-strip" id="links-status" aria-live="polite">
+            <span className={parsed.valid.length ? 'is-valid' : ''}><strong>{parsed.valid.length}</strong> valid</span>
+            <span className={parsed.invalid.length ? 'is-invalid' : ''}><strong>{parsed.invalid.length}</strong> perlu diperbaiki</span>
+            <span><strong>{selected.length}</strong> dipilih</span>
+            {validating && <span className="checking-label">Memeriksa…</span>}
+          </div>
+          {tooManyLinks && <p className="inline-feedback error-text">Maksimal 25 link. Hapus {parsed.valid.length - 25} link sebelum melanjutkan.</p>}
+          {validationMessage && <p className="inline-feedback">{validationMessage}</p>}
           <ContentTypePicker value={contentType} onChange={setContentType} />
           <button
-            type="button"
+            type="submit"
             className="button button-primary button-large"
-            onClick={startDownload}
-            disabled={!selected.length || starting}
+            disabled={!selected.length || starting || tooManyLinks}
           >
-            {starting ? 'Menyiapkan antrean…' : `Unduh ${selected.length || ''} link`}
+            {starting ? 'Menyiapkan antrean…' : `Unduh ${selected.length} link`}
           </button>
+          <p className="keyboard-hint">Tekan Ctrl/⌘ + Enter untuk mulai.</p>
           {!selected.length && parsed.valid.length > 0 && <p className="form-message">Pilih link yang ingin diproses.</p>}
-        </div>
+        </form>
       </section>
 
       <LinkList parsed={parsed} selected={selected} setSelected={setSelected} />
@@ -441,6 +560,7 @@ function HistoryPage({ notify, onRedownload }) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [confirmingId, setConfirmingId] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -462,7 +582,7 @@ function HistoryPage({ notify, onRedownload }) {
   }, [query, notify]);
 
   const redownload = async (item) => {
-    if (!window.confirm(`Unduh lagi ${shortUrl(item.sourceUrl)}?`)) return;
+    setConfirmingId(null);
     try {
       const created = await api(`/api/history/${item.id}/redownload`, { method: 'POST', body: '{}' });
       notify(created.message, 'success');
@@ -480,10 +600,14 @@ function HistoryPage({ notify, onRedownload }) {
         <p>Cari link lama dan jalankan ulang tanpa menempel dari awal.</p>
       </header>
       <section className="panel history-panel">
-        <label className="search-box">
-          <span aria-hidden="true">⌕</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari link atau kata kunci" />
-        </label>
+        <div className="history-toolbar">
+          <label className="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari link atau kata kunci" aria-label="Cari riwayat" />
+            {query && <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="Hapus pencarian"><AppIcon name="close" /></button>}
+          </label>
+          <span className="result-count">{loading ? 'Memuat…' : `${items.length} item`}</span>
+        </div>
         {loading ? (
           <div className="empty-state"><div className="loader" /><p>Memuat riwayat…</p></div>
         ) : items.length ? (
@@ -500,7 +624,15 @@ function HistoryPage({ notify, onRedownload }) {
                   <span className="tag">{contentOptions.find((option) => option.value === item.contentType)?.label}</span>
                   <span className={`status-pill status-${item.status}`}>{statusLabels[item.status]}</span>
                 </div>
-                <button type="button" className="button button-secondary" onClick={() => redownload(item)}>Unduh lagi</button>
+                {confirmingId === item.id ? (
+                  <div className="history-confirm" role="group" aria-label={`Konfirmasi unduh ulang ${shortUrl(item.sourceUrl)}`}>
+                    <span>Unduh ulang?</span>
+                    <button type="button" className="button button-primary" onClick={() => redownload(item)}>Ya</button>
+                    <button type="button" className="button button-quiet" onClick={() => setConfirmingId(null)}>Batal</button>
+                  </div>
+                ) : (
+                  <button type="button" className="button button-secondary" onClick={() => setConfirmingId(item.id)}>Unduh lagi</button>
+                )}
               </article>
             ))}
           </div>
@@ -522,6 +654,14 @@ function AccountPage({ session, onSessionChange, notify }) {
   const [password, setPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setPassword('');
+    setShowPassword(false);
+    if (nextMode !== 'reset') setResetToken('');
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -541,7 +681,7 @@ function AccountPage({ session, onSessionChange, notify }) {
           body: JSON.stringify({ token: resetToken, password }),
         });
         notify(result.message, 'success');
-        setMode('login');
+        switchMode('login');
         setPassword('');
       } else {
         const result = await api(`/api/auth/${mode}`, {
@@ -567,6 +707,14 @@ function AccountPage({ session, onSessionChange, notify }) {
       notify(error.message, 'error');
     }
   };
+
+  if (session === undefined) {
+    return (
+      <main className="page-shell">
+        <div className="page-loading" role="status"><div className="loader" /><p>Memeriksa sesi akun…</p></div>
+      </main>
+    );
+  }
 
   if (session) {
     return (
@@ -600,10 +748,10 @@ function AccountPage({ session, onSessionChange, notify }) {
       </section>
       <section className="auth-card">
         <div className="auth-tabs" role="tablist">
-          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Masuk</button>
-          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Daftar</button>
+          <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => switchMode('login')}>Masuk</button>
+          <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => switchMode('register')}>Daftar</button>
         </div>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} aria-busy={busy}>
           <div className="form-heading">
             <h2>{mode === 'register' ? 'Buat akun baru' : mode === 'forgot' ? 'Lupa sandi' : mode === 'reset' ? 'Buat sandi baru' : 'Selamat datang kembali'}</h2>
             <p>{mode === 'forgot' ? 'Masukkan identitas akun. Respons selalu sama demi keamanan.' : mode === 'reset' ? 'Gunakan kode reset yang diterima.' : 'Gunakan email atau nomor telepon.'}</p>
@@ -620,15 +768,18 @@ function AccountPage({ session, onSessionChange, notify }) {
           )}
           {mode !== 'forgot' && (
             <label className="form-field">Sandi
-              <input type="password" minLength="8" maxLength="128" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required />
+              <span className="password-field">
+                <input type={showPassword ? 'text' : 'password'} minLength="8" maxLength="128" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required />
+                <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Sembunyikan sandi' : 'Tampilkan sandi'}>{showPassword ? 'Sembunyikan' : 'Lihat'}</button>
+              </span>
               <small>Minimal 8 karakter.</small>
             </label>
           )}
-          <button className="button button-primary button-large" disabled={busy}>
+          <button type="submit" className="button button-primary button-large" disabled={busy}>
             {busy ? 'Memproses…' : mode === 'register' ? 'Buat akun' : mode === 'forgot' ? 'Kirim petunjuk' : mode === 'reset' ? 'Simpan sandi baru' : 'Masuk'}
           </button>
-          {mode === 'login' && <button type="button" className="text-button" onClick={() => setMode('forgot')}>Lupa sandi?</button>}
-          {(mode === 'forgot' || mode === 'reset') && <button type="button" className="text-button" onClick={() => setMode('login')}>Kembali ke masuk</button>}
+          {mode === 'login' && <button type="button" className="text-button" onClick={() => switchMode('forgot')}>Lupa sandi?</button>}
+          {(mode === 'forgot' || mode === 'reset') && <button type="button" className="text-button" onClick={() => switchMode('login')}>Kembali ke masuk</button>}
         </form>
       </section>
     </main>
