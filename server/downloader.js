@@ -5,7 +5,23 @@ import { buildFileName, mediaTypeFromExtension, mimeFromExtension } from './core
 
 const downloadRoot = path.resolve(process.env.DOWNLOAD_DIR || './storage/downloads');
 const archiveRoot = path.resolve(process.env.ARCHIVE_DIR || './storage/archives');
-const timeoutMs = Number(process.env.DOWNLOAD_TIMEOUT_MS || 180000);
+const timeoutMs = Number(process.env.DOWNLOAD_TIMEOUT_MS || 600000);
+const downloadDebug = process.env.DOWNLOAD_DEBUG === '1';
+
+function redactDiagnostics(value) {
+  return String(value || '')
+    .replace(/(authorization|cookie|set-cookie)(\s*[:=]\s*)[^\n]+/gi, '$1$2<redacted>')
+    .replace(/https?:\/\/[^\s]+/g, (rawUrl) => {
+      try {
+        const parsed = new URL(rawUrl);
+        parsed.search = '';
+        parsed.hash = '';
+        return parsed.toString();
+      } catch {
+        return '<url-redacted>';
+      }
+    });
+}
 
 async function listFiles(directory) {
   const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -20,12 +36,23 @@ async function listFiles(directory) {
 
 function run(command, args, { onLine, timeout = timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const child = spawn(command, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     let settled = false;
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       child.kill('SIGTERM');
-      reject(Object.assign(new Error('Proses unduhan melewati batas waktu.'), { code: 'DOWNLOAD_TIMEOUT' }));
+      const forceKill = setTimeout(() => child.kill('SIGKILL'), 5000);
+      forceKill.unref();
+      reject(
+        Object.assign(new Error(`Proses unduhan melewati batas waktu ${Math.round(timeout / 1000)} detik.`), {
+          code: 'DOWNLOAD_TIMEOUT',
+          diagnostics: redactDiagnostics(output),
+          elapsedMs: Date.now() - startedAt,
+        }),
+      );
     }, timeout);
 
     const collect = (chunk) => {
@@ -39,6 +66,8 @@ function run(command, args, { onLine, timeout = timeoutMs } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      error.diagnostics = redactDiagnostics(output);
+      error.elapsedMs = Date.now() - startedAt;
       reject(error);
     });
     child.once('close', (code) => {
@@ -46,7 +75,15 @@ function run(command, args, { onLine, timeout = timeoutMs } = {}) {
       settled = true;
       clearTimeout(timer);
       if (code === 0) resolve(output);
-      else reject(Object.assign(new Error(output || `Proses berhenti dengan kode ${code}.`), { code: 'DOWNLOADER_FAILED' }));
+      else {
+        reject(
+          Object.assign(new Error(output || `Proses berhenti dengan kode ${code}.`), {
+            code: 'DOWNLOADER_FAILED',
+            diagnostics: redactDiagnostics(output),
+            elapsedMs: Date.now() - startedAt,
+          }),
+        );
+      }
     });
   });
 }
@@ -61,7 +98,9 @@ export async function downloadInstagram({ id, sourceUrl, shortcode, contentType,
   await fs.mkdir(jobDirectory, { recursive: true });
 
   const binary = process.env.GALLERY_DL_BIN || 'gallery-dl';
-  const args = ['--destination', jobDirectory];
+  const args = [];
+  if (downloadDebug) args.push('--verbose');
+  args.push('--destination', jobDirectory);
   if (process.env.INSTAGRAM_COOKIES_FILE) args.push('--cookies', process.env.INSTAGRAM_COOKIES_FILE);
   args.push(sourceUrl);
 
@@ -69,9 +108,10 @@ export async function downloadInstagram({ id, sourceUrl, shortcode, contentType,
   onProgress(10);
   try {
     await run(binary, args, {
-      onLine: () => {
+      onLine: (line) => {
         observedLines += 1;
         onProgress(Math.min(85, 15 + observedLines * 8));
+        if (downloadDebug) console.info(`[gallery-dl:${id}] ${redactDiagnostics(line)}`);
       },
     });
   } catch (error) {

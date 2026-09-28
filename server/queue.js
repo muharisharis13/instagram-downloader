@@ -145,7 +145,11 @@ async function runJob(jobId) {
     });
     await completeJob(job, results);
   } catch (error) {
-    console.error(`Unduhan ${job.id} gagal:`, error.message);
+    const elapsed = error.elapsedMs ? ` setelah ${(error.elapsedMs / 1000).toFixed(1)} detik` : '';
+    console.error(`Unduhan ${job.id} gagal${elapsed}:`, error.message);
+    if (process.env.DOWNLOAD_DEBUG === '1' && error.diagnostics) {
+      console.error(`[gallery-dl:${job.id}:diagnostics]\n${error.diagnostics}`);
+    }
     await failJob(job, error);
   } finally {
     await refreshBatch(job.batch_id);

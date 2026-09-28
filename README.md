@@ -63,6 +63,7 @@ npm run build
 ## Catatan operasi
 
 - Unduhan memakai `gallery-dl`; `yt-dlp` dan `ffmpeg` tersedia sebagai pendukung video dalam image Docker.
+- Set `DOWNLOAD_DEBUG=1` sementara untuk mencatat keluaran `gallery-dl` yang sudah disamarkan; kembalikan ke `0` setelah diagnosis.
 - Konten privat atau yang membutuhkan login memerlukan file cookies milik operator. Jangan meminta atau menyimpan sandi Instagram pengguna.
 - Antrean berada dalam proses Node. Job `running` dikembalikan ke antrean setelah restart. Untuk lebih dari satu instance aplikasi, ganti antrean ini dengan Redis/BullMQ.
 - Bersihkan `storage/` memakai kebijakan retensi VPS. File tidak dihapus otomatis agar unduh ulang tetap bekerja.
