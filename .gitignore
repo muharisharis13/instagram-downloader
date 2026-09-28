@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+storage/
+coverage/
+graphify-out/
+*.log
+.DS_Store

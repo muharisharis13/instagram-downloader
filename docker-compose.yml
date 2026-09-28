@@ -1,0 +1,41 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: instagram_downloader
+      MYSQL_USER: instagram
+      MYSQL_PASSWORD: instagram
+      MYSQL_ROOT_PASSWORD: change-this-root-password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pchange-this-root-password"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_ORIGIN: http://localhost:3000
+      DATABASE_URL: mysql://instagram:instagram@db:3306/instagram_downloader
+      DOWNLOAD_CONCURRENCY: 2
+      DOWNLOAD_TIMEOUT_MS: 180000
+    ports:
+      - "3000:3000"
+    volumes:
+      - download_data:/app/storage
+      # Opsional untuk postingan yang memerlukan sesi:
+      # - ./instagram-cookies.txt:/run/secrets/instagram-cookies.txt:ro
+      # Tambahkan INSTAGRAM_COOKIES_FILE=/run/secrets/instagram-cookies.txt di environment.
+
+volumes:
+  mysql_data:
+  download_data:
